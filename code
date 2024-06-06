@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract HealthChain {
+
+    struct Record {
+        uint256 id;
+        string dataHash; // Hash of the medical data stored off-chain
+        address owner; // Owner of the record (patient)
+    }
+
+    struct AccessPermission {
+        address requester;
+        uint256 recordId;
+        bool granted;
+    }
+
+    uint256 public recordCounter;
+    mapping(uint256 => Record) public records;
+    mapping(address => uint256[]) public patientRecords;
+    mapping(uint256 => AccessPermission[]) public recordPermissions;
+
+    event RecordCreated(uint256 recordId, address owner);
+    event AccessGranted(uint256 recordId, address requester);
+    event AccessRevoked(uint256 recordId, address requester);
+
+    modifier onlyOwner(uint256 _recordId) {
+        require(records[_recordId].owner == msg.sender, "Not the owner");
+        _;
+    }
+
+    modifier hasPermission(uint256 _recordId) {
+        require(records[_recordId].owner == msg.sender || checkPermission(_recordId, msg.sender), "Access denied");
+        _;
+    }
+
+    function createRecord(string memory _dataHash) public {
+        recordCounter++;
+        uint256 recordId = recordCounter;
+        
+        records[recordId] = Record({
+            id: recordId,
+            dataHash: _dataHash,
+            owner: msg.sender
+        });
+        
+        patientRecords[msg.sender].push(recordId);
+
+        emit RecordCreated(recordId, msg.sender);
+    }
+
+    function grantAccess(uint256 _recordId, address _requester) public onlyOwner(_recordId) {
+        AccessPermission memory permission = AccessPermission({
+            requester: _requester,
+            recordId: _recordId,
+            granted: true
+        });
+        
+        recordPermissions[_recordId].push(permission);
+
+        emit AccessGranted(_recordId, _requester);
+    }
+
+    function revokeAccess(uint256 _recordId, address _requester) public onlyOwner(_recordId) {
+        for (uint256 i = 0; i < recordPermissions[_recordId].length; i++) {
+            if (recordPermissions[_recordId][i].requester == _requester) {
+                recordPermissions[_recordId][i].granted = false;
+                emit AccessRevoked(_recordId, _requester);
+                break;
+            }
+        }
+    }
+
+    function getRecord(uint256 _recordId) public view hasPermission(_recordId) returns (string memory) {
+        return records[_recordId].dataHash;
+    }
+
+    function checkPermission(uint256 _recordId, address _requester) internal view returns (bool) {
+        for (uint256 i = 0; i < recordPermissions[_recordId].length; i++) {
+            if (recordPermissions[_recordId][i].requester == _requester && recordPermissions[_recordId][i].granted) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function getPatientRecords(address _patient) public view returns (uint256[] memory) {
+        return patientRecords[_patient];
+    }
+}
